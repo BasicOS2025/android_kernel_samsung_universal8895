@@ -37,7 +37,11 @@ jobs:
             make O="$output" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- exynos8895-dreamlte_defconfig
             if [[ "$mode" == plain ]]; then scripts/config --file "$output/.config" --disable KSU; fi
             make O="$output" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
-            make -j4 O="$output" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- HOSTCFLAGS='-O2 -fcommon' Image 2>&1 | tee "$RUNNER_TEMP/kernel-logs/$mode.log"
+            if ! make -j4 O="$output" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- HOSTCFLAGS='-O2 -fcommon' Image 2>&1 | tee "$RUNNER_TEMP/kernel-logs/$mode-first.log"; then
+              if [[ "$mode" != next ]]; then exit 1; fi
+              echo 'Retrying Next once with existing objects after its source compatibility backports.'
+              make -j4 O="$output" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- HOSTCFLAGS='-O2 -fcommon' Image 2>&1 | tee "$RUNNER_TEMP/kernel-logs/$mode-retry.log"
+            fi
             test -s "$output/arch/arm64/boot/Image"
             if [[ "$mode" == next ]]; then
               aarch64-linux-gnu-nm "$output/vmlinux" | grep -w kernelsu_init > "$RUNNER_TEMP/kernel-logs/linked-kernelsu-symbol.txt"
