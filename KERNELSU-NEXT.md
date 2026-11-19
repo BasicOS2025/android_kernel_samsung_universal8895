@@ -20,3 +20,14 @@ same device with KSU disabled and enabled. This does not replace phone testing.
 The official Next Kbuild includes compatibility backports that may modify kernel
 source while building. CI preserves that diff in its diagnostics. Build success,
 Android 17 boot, manager authorization and root operation are not yet verified.
+
+## Verified build result
+
+Actions run 44379364933 passed: all three device configurations, S8 Image with
+Next enabled (linked kernelsu_init symbol), and S8 Image with KSU disabled.
+The exact compatibility source changes recorded by that successful run are now
+committed, avoiding reliance on late source mutation and an incremental retry.
+S8+/Note8 full Image builds, Android 17 ROM boot and manager/root runtime tests
+remain unverified.
+
+https://github.com/BasicOS2025/android_kernel_samsung_universal8895/actions/runs/44379364933
