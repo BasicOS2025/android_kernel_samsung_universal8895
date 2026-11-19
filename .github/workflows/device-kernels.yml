@@ -1,0 +1,66 @@
+name: Compile all universal8895 device kernels and DTBs
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: device-kernels-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        device: [dreamlte, dream2lte, greatlte]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install compiler and DTB dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y bc bison flex ccache gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu libssl-dev libelf-dev make device-tree-compiler
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-8895-device-${{ matrix.device }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-8895-device-${{ matrix.device }}-
+            ${{ runner.os }}-8895-gcc11-ccache-v1-
+      - run: ccache -M 3G
+      - name: Build Next-enabled Image and device trees
+        env:
+          DEVICE: ${{ matrix.device }}
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/kernel"
+          mkdir -p artifacts
+          make O="$output" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- "exynos8895-${DEVICE}_defconfig"
+          grep -qx CONFIG_KSU=y "$output/.config"
+          grep -qx CONFIG_KSU_MANUAL_HOOK=y "$output/.config"
+          make -j4 O="$output" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="ccache aarch64-linux-gnu-gcc" HOSTCC="ccache gcc" HOSTCFLAGS='-O2 -fcommon' Image dtbs 2>&1 | tee artifacts/build.log
+          cp "$output/arch/arm64/boot/Image" artifacts/
+          cp "$output/.config" artifacts/kernel.config
+          mkdir -p artifacts/dtbs
+          find "$output/arch/arm64/boot/dts/exynos" -name '*.dtb' -exec cp {} artifacts/dtbs/ \;
+          test -n "$(find artifacts/dtbs -name "*${DEVICE}*.dtb" -print -quit)"
+          aarch64-linux-gnu-nm "$output/vmlinux" | grep -w kernelsu_init > artifacts/kernelsu-symbol.txt
+          git diff --exit-code -- fs security include
+          printf '%s\n' 'Raw Image and DTBs only. Not a flashable boot/recovery image or ROM.' > artifacts/README.txt
+          git rev-parse HEAD > artifacts/source-commit.txt
+          (cd artifacts && sha256sum Image dtbs/*.dtb > SHA256SUMS)
+      - name: Save compiler cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-8895-device-${{ matrix.device }}-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kernel-${{ matrix.device }}-next
+          path: artifacts/
+          retention-days: 7
